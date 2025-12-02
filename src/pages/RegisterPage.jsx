@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { auth } from "../firebase";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 
 function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -10,6 +12,9 @@ function RegisterPage() {
   });
 
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -19,11 +24,36 @@ function RegisterPage() {
     });
   };
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
-    console.log("Register:", formData);
+    setError("");
+    setLoading(true);
 
-    navigate("/login");
+    try {
+      // buat akun di Firebase Auth
+      await createUserWithEmailAndPassword(
+        auth,
+        formData.email,
+        formData.password
+      );
+
+      // TODO: name & username bisa disimpan ke Firestore nanti
+      // Flow yang kamu mau: setelah register → ke InputProgressPage
+      navigate("/input-progress");
+    } catch (err) {
+      console.error("Register error:", err);
+      if (err.code === "auth/email-already-in-use") {
+        setError("Email sudah terdaftar.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Format email tidak valid.");
+      } else if (err.code === "auth/weak-password") {
+        setError("Password terlalu lemah (minimal 6 karakter).");
+      } else {
+        setError("Gagal mendaftar. Coba lagi nanti.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -154,13 +184,21 @@ function RegisterPage() {
               Password must be at least 6 characters
             </p>
 
+            {/* error message */}
+            {error && (
+              <p className="text-xs text-red-100 bg-red-500/40 rounded-md px-3 py-2">
+                {error}
+              </p>
+            )}
+
             {/* Submit */}
             <button
               type="submit"
+              disabled={loading}
               className="w-full bg-blue-900 text-white py-3 rounded-xl font-semibold 
-              hover:bg-blue-950 transition-all shadow-lg hover:shadow-xl"
+              hover:bg-blue-950 transition-all shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Sign Up
+              {loading ? "Signing Up..." : "Sign Up"}
             </button>
           </form>
 
@@ -249,7 +287,7 @@ function HideIcon() {
         d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97
         9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88
         9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112
-        5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+        5c4.478 0 8.268-2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
       />
     </svg>
   );

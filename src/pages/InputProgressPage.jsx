@@ -1,10 +1,15 @@
+// src/pages/InputProgressPage.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { auth, db } from "../firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 function InputProgressPage() {
   const navigate = useNavigate();
 
   const [inputs, setInputs] = useState([""]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   // tambah input baru di bawah input pertama
   const addInput = () => {
@@ -17,12 +22,45 @@ function InputProgressPage() {
     setInputs(updated);
   };
 
-  const handleNext = () => {
-    const filtered = inputs.filter((i) => i.trim() !== "");
-    if (filtered.length === 0) return;
+  const handleNext = async () => {
+    setError("");
 
+    const filtered = inputs.filter((i) => i.trim() !== "");
+    if (filtered.length === 0) {
+      setError("Minimal isi satu progress dulu ya 🙂");
+      return;
+    }
+
+    // simpan ke localStorage (dipakai di LoginPage)
     localStorage.setItem("progress", JSON.stringify(filtered));
-    navigate("/home");
+
+    const user = auth.currentUser;
+    if (!user) {
+      // kalau entah kenapa user belum login, balikin ke login
+      navigate("/login");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // simpan progress ke Firestore di dokumen users/{uid}
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(
+        userRef,
+        {
+          progress: filtered,
+          email: user.email ?? null,
+        },
+        { merge: true }
+      );
+
+      navigate("/home");
+    } catch (err) {
+      console.error("Gagal menyimpan progress:", err);
+      setError("Gagal menyimpan ke database. Coba lagi nanti.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -57,7 +95,7 @@ function InputProgressPage() {
         </div>
 
         {/* INPUT TAMBAHAN */}
-        <div className="space-y-4 mb-20 max-h-[250px] overflow-y-auto pr-2 custom-scroll">
+        <div className="space-y-4 mb-6 max-h-[250px] overflow-y-auto pr-2 custom-scroll">
           {inputs.slice(1).map((value, index) => (
             <input
               key={index + 1}
@@ -70,11 +108,19 @@ function InputProgressPage() {
           ))}
         </div>
 
+        {/* error message */}
+        {error && (
+          <p className="text-sm text-red-700 bg-red-100 rounded-lg px-4 py-2 mb-4">
+            {error}
+          </p>
+        )}
+
         <button
           onClick={handleNext}
-          className="w-full bg-blue-900 text-white py-4 rounded-xl text-xl font-semibold hover:bg-blue-950 shadow-xl"
+          disabled={saving}
+          className="w-full bg-blue-900 text-white py-4 rounded-xl text-xl font-semibold hover:bg-blue-950 shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Next
+          {saving ? "Saving..." : "Next"}
         </button>
       </div>
     </div>

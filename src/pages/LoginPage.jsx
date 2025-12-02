@@ -1,5 +1,12 @@
+// src/pages/LoginPage.jsx
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { auth, googleProvider, db } from "../firebase";
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -8,24 +15,70 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = (e) => {
-    e.preventDefault();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
 
-    //cek user apakah sudah input progress atau belum
-    const hasProgress = localStorage.getItem("progress");
+  // cek progress per user dari Firestore
+  const redirectAfterLogin = async (user) => {
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const snap = await getDoc(userRef);
 
-    if (hasProgress) {
-      navigate("/home");
-    } else {
+      const data = snap.exists() ? snap.data() : null;
+      const progress = data?.progress;
+
+      if (Array.isArray(progress) && progress.length > 0) {
+        // sudah punya progress → langsung ke home
+        navigate("/home");
+      } else {
+        // belum punya progress → suruh isi dulu
+        navigate("/input-progress");
+      }
+    } catch (err) {
+      console.error("Gagal cek progress:", err);
+      // fallback aman: arahkan ke input-progress
       navigate("/input-progress");
     }
   };
 
-  const handleGoogleLogin = () => {
-    console.log("Login with Google");
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    const hasProgress = localStorage.getItem("progress");
-    navigate(hasProgress ? "/home" : "/input-progress");
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await redirectAfterLogin(cred.user);
+    } catch (err) {
+      console.error("Login error:", err);
+      if (err.code === "auth/user-not-found") {
+        setError("Akun tidak ditemukan. Silakan daftar terlebih dahulu.");
+      } else if (err.code === "auth/wrong-password") {
+        setError("Password salah.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Format email tidak valid.");
+      } else {
+        setError("Gagal login. Coba lagi nanti.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError("");
+    setLoadingGoogle(true);
+
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      await redirectAfterLogin(cred.user);
+    } catch (err) {
+      console.error("Google login error:", err);
+      setError("Gagal login dengan Google.");
+    } finally {
+      setLoadingGoogle(false);
+    }
   };
 
   return (
@@ -114,7 +167,7 @@ function LoginPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268-2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
                     />
                   </svg>
                 ) : (
@@ -151,12 +204,20 @@ function LoginPage() {
               </a>
             </div>
 
+            {/* error */}
+            {error && (
+              <p className="text-xs text-red-100 bg-red-500/40 rounded-md px-3 py-2">
+                {error}
+              </p>
+            )}
+
             {/* Login Button */}
             <button
               type="submit"
-              className="w-full bg-blue-900 text-white py-3 rounded-xl font-semibold hover:bg-blue-950 transition-all shadow-lg hover:shadow-xl"
+              disabled={loading}
+              className="w-full bg-blue-900 text-white py-3 rounded-xl font-semibold hover:bg-blue-950 transition-all shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Log In
+              {loading ? "Logging In..." : "Log In"}
             </button>
           </form>
 
@@ -168,7 +229,8 @@ function LoginPage() {
 
           <button
             onClick={handleGoogleLogin}
-            className="w-full bg-white text-gray-900 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-all flex items-center justify-center gap-3 shadow-md"
+            disabled={loadingGoogle}
+            className="w-full bg-white text-gray-900 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-all flex items-center justify-center gap-3 shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -188,7 +250,7 @@ function LoginPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            <span>Google</span>
+            <span>{loadingGoogle ? "Signing in..." : "Google"}</span>
           </button>
 
           {/* Sign Up */}
